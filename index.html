@@ -91,9 +91,9 @@
             border: 2px solid #0f172a;
         }
 
-        /* Rijhoogte strikt op 32mm */
+        /* Rijhoogte strikt op 33mm */
         .day-row {
-            height: 32mm;
+            height: 33mm;
         }
 
         .btn-action {
@@ -230,8 +230,8 @@
         let gapiInited = false;
         let gisInited = false;
 
-        // Startdatum instellen (vandaag)
-        let selectedMonday = getMonday(new Date('2026-03-23')); // Standaard op de gevraagde datum
+        // Startdatum instellen
+        let selectedMonday = getMonday(new Date('2026-03-23')); 
         let schedule = {};
 
         function getMonday(d) {
@@ -255,7 +255,6 @@
         function updateWeek() {
             const weekVal = document.getElementById('week-selector').value;
             if (weekVal) {
-                // ISO Week naar Datum conversie
                 const [year, week] = weekVal.split('-W');
                 let d = new Date(year, 0, 1 + (week - 1) * 7);
                 selectedMonday = getMonday(d);
@@ -267,7 +266,6 @@
             formatSchedule();
             updateLabels();
             renderTable();
-            // Als we al ingelogd zijn, kunnen we direct syncen
             if (gapi.client && gapi.client.getToken()) {
                 listUpcomingEvents();
             }
@@ -333,11 +331,11 @@
                 const calendarListResponse = await gapi.client.calendar.calendarList.list();
                 const calendars = calendarListResponse.result.items;
 
-                const startOfWeek = new Date(selectedMonday);
-                startOfWeek.setHours(0,0,0,0);
-                const endOfWeek = new Date(selectedMonday);
-                endOfWeek.setDate(selectedMonday.getDate() + 7);
-                endOfWeek.setHours(0,0,0,0);
+                const weekStart = new Date(selectedMonday);
+                weekStart.setHours(0,0,0,0);
+                const weekEnd = new Date(selectedMonday);
+                weekEnd.setDate(selectedMonday.getDate() + 7);
+                weekEnd.setHours(0,0,0,0);
 
                 // Reset data velden maar behoud notes
                 Object.keys(schedule).forEach(k => {
@@ -356,22 +354,42 @@
 
                     const response = await gapi.client.calendar.events.list({
                         calendarId: cal.id,
-                        timeMin: startOfWeek.toISOString(),
-                        timeMax: endOfWeek.toISOString(),
+                        timeMin: weekStart.toISOString(),
+                        timeMax: weekEnd.toISOString(),
                         singleEvents: true,
                         orderBy: 'startTime',
                     });
 
                     const events = response.result.items;
                     events.forEach(event => {
-                        const start = event.start.dateTime || event.start.date;
-                        const startDate = new Date(start);
-                        const dayIndex = (startDate.getDay() + 6) % 7; 
-                        const dayKey = Object.keys(schedule)[dayIndex];
+                        const start = new Date(event.start.dateTime || event.start.date);
+                        const end = new Date(event.end.dateTime || event.end.date);
+                        
+                        // Doorloop elke dag van het agendapunt
+                        let current = new Date(start);
+                        while (current < end) {
+                            // Controleer of deze dag binnen de geselecteerde week valt
+                            if (current >= weekStart && current < weekEnd) {
+                                const dayIndex = (current.getDay() + 6) % 7; 
+                                const dayKey = Object.keys(schedule)[dayIndex];
 
-                        if (dayKey) {
-                            const timeStr = event.start.dateTime ? new Date(event.start.dateTime).toLocaleTimeString('nl-NL', {hour: '2-digit', minute:'2-digit'}) : "";
-                            schedule[dayKey][targetKey] += (schedule[dayKey][targetKey] ? "\n" : "") + (timeStr ? timeStr + " " : "") + event.summary;
+                                if (dayKey) {
+                                    // Alleen tijd toevoegen op de startdag, anders is het een "Hele dag" punt voor de overige dagen
+                                    const isStartDay = current.toDateString() === start.toDateString();
+                                    const timeStr = (isStartDay && event.start.dateTime) ? 
+                                        new Date(event.start.dateTime).toLocaleTimeString('nl-NL', {hour: '2-digit', minute:'2-digit'}) + " " : "";
+                                    
+                                    const eventEntry = timeStr + event.summary;
+                                    
+                                    // Voorkom dubbele tekst op dezelfde dag
+                                    if (!schedule[dayKey][targetKey].includes(eventEntry)) {
+                                        schedule[dayKey][targetKey] += (schedule[dayKey][targetKey] ? "\n" : "") + eventEntry;
+                                    }
+                                }
+                            }
+                            // Ga naar de volgende dag om 00:00:00
+                            current.setDate(current.getDate() + 1);
+                            current.setHours(0,0,0,0);
                         }
                     });
                 }
@@ -391,7 +409,6 @@
             Object.keys(schedule).forEach(day => {
                 const [dag, datum] = day.split(' ');
                 
-                // Kids
                 kidsBody.innerHTML += `
                     <tr class="day-row">
                         <td class="bg-slate-100 p-4 align-top border-r-2 border-slate-900">
@@ -403,7 +420,6 @@
                     </tr>
                 `;
 
-                // Parents
                 parentsBody.innerHTML += `
                     <tr class="day-row">
                         <td class="bg-slate-100 p-4 align-top border-r-2 border-slate-900">
@@ -411,14 +427,13 @@
                             <div class="text-[12px] text-indigo-600 font-black tracking-widest uppercase">${datum}</div>
                         </td>
                         <td class="p-4 align-top border-r-2 border-slate-900"><textarea oninput="schedule['${day}'].janEls = this.value">${schedule[day].janEls}</textarea></td>
-                        <td class="p-4 align-top"><textarea oninput="schedule['${day}'].notes = this.value" class="italic text-slate-400 font-semibold" placeholder="...">${schedule[day].notes}</textarea></td>
+                        <td class="p-4 align-top"><textarea oninput="schedule['${day}'].notes = this.value" class="italic text-slate-400 font-semibold" placeholder="Handmatige notities...">${schedule[day].notes}</textarea></td>
                     </tr>
                 `;
             });
             lucide.createIcons();
         }
 
-        // Initieel instellen van de week selector input
         function setInitialWeek() {
             const d = selectedMonday;
             const year = d.getFullYear();
