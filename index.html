@@ -91,9 +91,9 @@
             border: 2px solid #0f172a;
         }
 
-        /* Rijhoogte strikt op 33mm */
+        /* Rijhoogte strikt op 35mm */
         .day-row {
-            height: 33mm;
+            height: 35mm;
         }
 
         .btn-action {
@@ -362,32 +362,36 @@
 
                     const events = response.result.items;
                     events.forEach(event => {
-                        const start = new Date(event.start.dateTime || event.start.date);
-                        const end = new Date(event.end.dateTime || event.end.date);
+                        // Gebruik T00:00:00 om lokale tijd te forceren bij all-day events (voorkomt dag-shift)
+                        const start = event.start.dateTime ? new Date(event.start.dateTime) : new Date(event.start.date + "T00:00:00");
+                        const end = event.end.dateTime ? new Date(event.end.dateTime) : new Date(event.end.date + "T00:00:00");
                         
-                        // Doorloop elke dag van het agendapunt
+                        // Voor timed events die om exact 00:00 eindigen, trekken we 1ms af
+                        let adjustedEnd = new Date(end);
+                        if (event.start.dateTime && end.getHours() === 0 && end.getMinutes() === 0 && end.getSeconds() === 0) {
+                            adjustedEnd.setMilliseconds(-1);
+                        }
+
                         let current = new Date(start);
-                        while (current < end) {
-                            // Controleer of deze dag binnen de geselecteerde week valt
+                        current.setHours(0,0,0,0);
+
+                        while (current < adjustedEnd) {
                             if (current >= weekStart && current < weekEnd) {
                                 const dayIndex = (current.getDay() + 6) % 7; 
                                 const dayKey = Object.keys(schedule)[dayIndex];
 
                                 if (dayKey) {
-                                    // Alleen tijd toevoegen op de startdag, anders is het een "Hele dag" punt voor de overige dagen
                                     const isStartDay = current.toDateString() === start.toDateString();
                                     const timeStr = (isStartDay && event.start.dateTime) ? 
                                         new Date(event.start.dateTime).toLocaleTimeString('nl-NL', {hour: '2-digit', minute:'2-digit'}) + " " : "";
                                     
                                     const eventEntry = timeStr + event.summary;
                                     
-                                    // Voorkom dubbele tekst op dezelfde dag
                                     if (!schedule[dayKey][targetKey].includes(eventEntry)) {
                                         schedule[dayKey][targetKey] += (schedule[dayKey][targetKey] ? "\n" : "") + eventEntry;
                                     }
                                 }
                             }
-                            // Ga naar de volgende dag om 00:00:00
                             current.setDate(current.getDate() + 1);
                             current.setHours(0,0,0,0);
                         }
